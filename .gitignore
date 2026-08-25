@@ -1,0 +1,47 @@
+# Environment variables
+.env
+.env.local
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+.pytest_cache/
+
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+.output/
+
+# Database & Storage
+*.db
+*.sqlite3
+backend/shopguardian.db
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Private Data
+backend/Snapshots/
+backend/Logs/
+Snapshots/
+Logs/
+
+# Legacy Files
+backend/test_rtsp.py
+backend/main_backup.py
+
+backend/Frames/

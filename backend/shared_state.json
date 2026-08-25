@@ -1,0 +1,22 @@
+{
+    "occupied": false,
+    "shop_status": "Empty",
+    "customer_count": 234,
+    "last_detection": "2026-08-24 21:41:10",
+    "camera1": "Online",
+    "camera2": "Online",
+    "recent_activity": [
+        "Customer entered at 2026-08-24 21:41:10",
+        "Shop became empty at 2026-08-24 21:41:05",
+        "Customer entered at 2026-08-24 21:40:59",
+        "Shop became empty at 2026-08-24 21:40:53",
+        "Customer entered at 2026-08-24 21:40:46",
+        "Shop became empty at 2026-08-24 21:40:43",
+        "Customer entered at 2026-08-24 21:40:36",
+        "Shop became empty at 2026-08-24 21:40:30",
+        "Customer entered at 2026-08-24 21:40:24",
+        "Shop became empty at 2026-08-24 21:40:20"
+    ],
+    "latest_snapshot": "2026-08-24_21-41-10.jpg",
+    "last_updated": "2026-08-24 21:41:18"
+}
