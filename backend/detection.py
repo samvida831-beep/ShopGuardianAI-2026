@@ -150,10 +150,12 @@ def main():
     load_camera1_zone()
     load_camera2_zone()
 
-    cv2.namedWindow(WINDOW_NAME)
-    cv2.setMouseCallback(WINDOW_NAME, camera1_mouse_callback)
-    cv2.namedWindow(CAMERA2_WINDOW_NAME)
-    cv2.setMouseCallback(CAMERA2_WINDOW_NAME, camera2_mouse_callback)
+    headless = os.getenv("HEADLESS", "false" if os.name != "nt" else "true").lower() == "true"
+    if not headless:
+        cv2.namedWindow(WINDOW_NAME)
+        cv2.setMouseCallback(WINDOW_NAME, camera1_mouse_callback)
+        cv2.namedWindow(CAMERA2_WINDOW_NAME)
+        cv2.setMouseCallback(CAMERA2_WINDOW_NAME, camera2_mouse_callback)
 
     customer_count = 0
     shop_occupied = False
@@ -295,7 +297,6 @@ def main():
             draw_camera1_zone(camera1_frame)
             draw_camera2_zone(camera2_frame)
 
-            headless = os.getenv("HEADLESS", "false" if os.name == "nt" else "true").lower() == "true"
             if not headless:
                 try:
                     cv2.imshow(WINDOW_NAME, camera1_frame)
