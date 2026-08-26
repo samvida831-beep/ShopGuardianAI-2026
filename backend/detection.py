@@ -70,23 +70,41 @@ def save_shared_state():
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(shop_state, f, indent=4)
 
+def draw_detected_boxes(frame, boxes):
+    """Draw bounding boxes and labels for detected persons."""
+    for x1, y1, x2, y2, inside_zone in boxes:
+        bottom_center_x = (x1 + x2) // 2
+        bottom_center_y = y2
+        color = (0, 255, 0) if inside_zone else (0, 0, 255)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+        cv2.circle(frame, (bottom_center_x, bottom_center_y), 5, color, -1)
+        cv2.putText(
+            frame,
+            "Person",
+            (x1, max(25, y1 - 10)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            color,
+            2,
+        )
+
+
 def detect_people(model, frame, zone_intersects, early_margin=0):
     """Detect people, annotate their boxes, and report zone presence."""
     any_person_detected = False
     person_in_zone = False
+    detected_boxes = []
 
     try:
         results = model(frame, classes=[0], conf=CONFIDENCE, verbose=False)
     except Exception as error:
         print(f"Person detection failed: {error}")
-        return False, False
+        return False, False, []
 
     frame_height, frame_width = frame.shape[:2]
     for result in results:
         for box in result.boxes:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
-            bottom_center_x = (x1 + x2) // 2
-            bottom_center_y = y2
             inside_zone = zone_intersects(x1, y1, x2, y2)
 
             if early_margin:
@@ -97,23 +115,12 @@ def detect_people(model, frame, zone_intersects, early_margin=0):
                     min(frame_height, y2 + early_margin),
                 )
 
-            color = (0, 255, 0) if inside_zone else (0, 0, 255)
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            cv2.circle(frame, (bottom_center_x, bottom_center_y), 5, color, -1)
-            cv2.putText(
-                frame,
-                "Person",
-                (x1, max(25, y1 - 10)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                color,
-                2,
-            )
-
+            detected_boxes.append((x1, y1, x2, y2, inside_zone))
             any_person_detected = True
             person_in_zone = person_in_zone or inside_zone
 
-    return any_person_detected, person_in_zone
+    draw_detected_boxes(frame, detected_boxes)
+    return any_person_detected, person_in_zone, detected_boxes
 
 
 def draw_status(frame, customer_count, shop_occupied, zone_loaded):
@@ -227,6 +234,10 @@ def main():
     last_cam2_id = -1
     last_frame_save_time = 0.0
 
+    cam_turn = 1
+    cam1_person_detected, cam1_in_zone, cam1_boxes = False, False, []
+    cam2_person_detected, cam2_in_zone, cam2_boxes = False, False, []
+
     try:
         while True:
             # Skip redundant YOLO inference and frame allocations if no new frame arrived from either camera
@@ -247,15 +258,27 @@ def main():
                 continue
 
             now = time.monotonic()
-            camera1_person_detected, person_in_camera1_zone = detect_people(
-                model, camera1_frame, box_intersects_camera1_zone
-            )
-            camera2_person_detected, person_in_camera2_zone = detect_people(
-                model,
-                camera2_frame,
-                box_intersects_camera2_zone,
-                early_margin=CAMERA2_EARLY_MARGIN,
-            )
+
+            if cam_turn == 1:
+                cam1_person_detected, cam1_in_zone, cam1_boxes = detect_people(
+                    model, camera1_frame, box_intersects_camera1_zone
+                )
+                draw_detected_boxes(camera2_frame, cam2_boxes)
+                cam_turn = 2
+            else:
+                cam2_person_detected, cam2_in_zone, cam2_boxes = detect_people(
+                    model,
+                    camera2_frame,
+                    box_intersects_camera2_zone,
+                    early_margin=CAMERA2_EARLY_MARGIN,
+                )
+                draw_detected_boxes(camera1_frame, cam1_boxes)
+                cam_turn = 1
+
+            camera1_person_detected = cam1_person_detected
+            person_in_camera1_zone = cam1_in_zone
+            camera2_person_detected = cam2_person_detected
+            person_in_camera2_zone = cam2_in_zone
 
             any_person_detected = camera1_person_detected or camera2_person_detected
             person_in_any_zone = person_in_camera1_zone or person_in_camera2_zone
