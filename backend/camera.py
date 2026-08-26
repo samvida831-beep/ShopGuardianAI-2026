@@ -101,14 +101,27 @@ class CameraStream:
                     self.frame = frame
                     self.ret = True
                     self._frame_id += 1
-                # Pacing background read loop to max ~60 fps, preventing unthrottled memory allocation loops
-                time.sleep(0.01)
+
+                # Pace background read loop based on source type
+                if self.is_video:
+                    fps = 30.0
+                    if self.cap is not None:
+                        try:
+                            vid_fps = self.cap.get(cv2.CAP_PROP_FPS)
+                            if vid_fps > 0:
+                                fps = vid_fps
+                        except Exception:
+                            pass
+                    time.sleep(1.0 / fps)
+                else:
+                    # Original behavior for live RTSP cameras
+                    time.sleep(0.01)
             else:
                 with self.lock:
                     self.ret = False
 
-                if self.is_video and self.cap is not None and self.cap.isOpened():
-                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                if self.is_video:
+                    self._init_cap()  # Reopen the video robustly on EOF
                     time.sleep(0.03)
                     continue
 
