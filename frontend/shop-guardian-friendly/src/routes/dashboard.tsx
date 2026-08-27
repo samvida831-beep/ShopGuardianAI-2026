@@ -1,11 +1,13 @@
 import ZoneEditor from "@/components/ZoneEditor";
 import { createFileRoute } from "@tanstack/react-router";
-import { saveZone, loadZone, getCameraInfo } from "@/lib/api";
+import { saveZone, loadZone, getCameraInfo, getSnapshotImageUrl } from "@/lib/api";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getStatus,
   getActivity,
   getCameraFrameUrl,
+  getAlerts,
+  getSnapshots,
   type ShopStatus,
   type CameraInfo,
 } from "@/lib/api";
@@ -57,7 +59,7 @@ function Dashboard() {
   const [state, setState] = useState<SystemState>("running");
   const [customers, setCustomers] = useState(0);
   const [snapCount, setSnapCount] = useState(0);
-  const [alertsCount] = useState(15);
+  const [alertsCount, setAlertsCount] = useState(0);
   const [runtimeStart] = useState(() => Date.now() - 2 * 3600 * 1000 - 15 * 60 * 1000);
   const [zoneCamera, setZoneCamera] = useState<1 | 2>(1);
   const [zoneShape, setZoneShape] = useState<"rectangle" | "circle" | "polygon">("rectangle");
@@ -112,6 +114,20 @@ function Dashboard() {
     }
 
     loadCameraMetadata();
+  }, []);
+
+  useEffect(() => {
+    async function loadCounts() {
+      try {
+        const [alerts, snaps] = await Promise.all([getAlerts(), getSnapshots()]);
+        setAlertsCount(alerts.length);
+        setSnapCount(snaps.length);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    loadCounts();
   }, []);
 
   useEffect(() => {
@@ -468,7 +484,7 @@ function handleMouseUp() {
             </span>
           </div>
           <div className="mt-4 overflow-hidden rounded-2xl border border-border">
-            <img src={shopData?.latest_snapshot ? `http://127.0.0.1:8000/api/snapshot-image?file=${shopData.latest_snapshot}` : snapshots[0].src}alt="Latest snapshot" className="h-48 w-full object-cover" loading="lazy"/>
+            <img src={shopData?.latest_snapshot ? getSnapshotImageUrl(shopData.latest_snapshot) : snapshots[0].src} alt="Latest snapshot" className="h-48 w-full object-cover" loading="lazy"/>
           </div>
           <div className="mt-3 flex items-center justify-between text-sm">
             <div>

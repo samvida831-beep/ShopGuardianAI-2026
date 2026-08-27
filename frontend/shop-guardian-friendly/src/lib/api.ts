@@ -1,13 +1,30 @@
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || "http://127.0.0.1:8000";
 
+// Auth token for <img>/<video>/MJPEG URLs (browsers cannot attach Authorization
+// headers to those tags). Kept in memory only; never logged.
+let mediaToken: string | null = null;
+
+export function setMediaToken(token: string | null) {
+  mediaToken = token;
+}
+
+function withMediaToken(path: string): string {
+  // Fall back to the persisted session token so media URLs keep working
+  // after a page refresh (setAuthToken only runs on login/register).
+  const active = mediaToken || getStoredAuthToken();
+  if (!active) return path;
+  return `${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(active)}`;
+}
+
 export function getSnapshotImageUrl(file: string): string {
-  return `${BASE_URL}/api/snapshot-image?file=${encodeURIComponent(file)}`;
+  return withMediaToken(`${BASE_URL}/api/snapshot-image?file=${encodeURIComponent(file)}`);
 }
 
 let authToken: string | null = null;
 
 export function setAuthToken(token: string | null) {
   authToken = token;
+  setMediaToken(token);
   if (typeof window !== "undefined") {
     if (token) {
       window.localStorage.setItem("shopguardian_token", token);
@@ -42,6 +59,12 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
+    // Expired/invalid session -> clear auth state so the UI returns to login.
+    if (response.status === 401 && typeof window !== "undefined") {
+      setAuthToken(null);
+      window.localStorage.removeItem("shopguardian:config:v2");
+      window.dispatchEvent(new CustomEvent("shopguardian:config"));
+    }
     let errDetail = `Request failed with status ${response.status}`;
     try {
       const errJson = await response.json();
@@ -226,7 +249,11 @@ export async function getSnapshot(): Promise<{ latest_snapshot: string }> {
 }
 
 export function getCameraFrameUrl(camera: 1 | 2): string {
-  return `${BASE_URL}/api/frame?camera=${camera}`;
+  return withMediaToken(`${BASE_URL}/api/frame?camera=${camera}`);
+}
+
+export function getStreamUrl(camera: 1 | 2): string {
+  return withMediaToken(`${BASE_URL}/api/stream?camera=${camera}`);
 }
 
 export async function getSnapshots(): Promise<string[]> {
@@ -288,6 +315,21 @@ export async function saveAlert(payload: Record<string, unknown>) {
 
 export async function getSettings(): Promise<Record<string, string>> {
   return requestJson<Record<string, string>>("/api/settings");
+}
+
+export interface StorageStatus {
+  screenshots_used: number;
+  screenshots_max: number;
+  customer_visit_records: number;
+  alert_records: number;
+  screenshot_retention_days: number;
+  log_retention_days: number;
+  last_cleanup: string;
+  error?: string;
+}
+
+export async function getStorageStatus(): Promise<StorageStatus> {
+  return requestJson<StorageStatus>("/api/storage/status");
 }
 
 export async function saveSetting(key: string, value: string) {

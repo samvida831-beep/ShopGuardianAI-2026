@@ -1,14 +1,15 @@
+import asyncio
 import json
 import os
 import threading
 import cv2
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Header, Depends
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, EmailStr
 from fastapi.middleware.cors import CORSMiddleware
 
-from state import shop_state
+from state import shop_state, latest_frames
 from database import (
     AdminUser,
     Shop,
@@ -139,6 +140,26 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> AdminUser:
     return user
 
 
+def get_current_user_flexible(
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = None,
+) -> AdminUser:
+    """Auth for <img>/<video>/MJPEG contexts: browsers cannot attach
+    Authorization headers to those tags, so a ?token= query parameter is also
+    accepted. Verification is identical to get_current_user (same HMAC check).
+    Tokens are never logged."""
+    raw = token
+    if not raw and authorization:
+        raw = authorization.replace("Bearer ", "").strip()
+    if raw:
+        user_id = verify_auth_token(raw)
+        if user_id:
+            user = get_admin_user_by_id(user_id)
+            if user:
+                return user
+    raise HTTPException(status_code=401, detail="Authentication token missing, invalid or expired.")
+
+
 # --- Helper Functions ---
 
 def load_state():
@@ -259,6 +280,7 @@ dev_origins = [
     "http://127.0.0.1:8080",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:8000",
+    "http://192.168.1.8:8080",
 ]
 cors_env = os.getenv("CORS_ORIGINS", "")
 allowed_origins = list(dev_origins)
@@ -430,41 +452,29 @@ async def shop_setup(payload: ShopSetupPayload, user: AdminUser = Depends(get_cu
 
 
 @app.get("/api/shop/details")
-async def shop_details(user_opt: Optional[AdminUser] = Depends(get_current_user_optional)):
-    if user_opt:
-        shop = get_shop_by_owner(user_opt.id)
-        if shop:
-            return {
-                "id": shop.id,
-                "shop_name": shop.shop_name,
-                "owner_name": user_opt.full_name or user_opt.username,
-                "shop_type": shop.shop_type or "General Retail",
-                "address": shop.address or "",
-                "city": shop.city or "",
-                "state": shop.state or "",
-                "pin_code": shop.pin_code or "",
-                "phone": user_opt.phone or "",
-                "email": user_opt.email or "",
-            }
+async def shop_details(user: AdminUser = Depends(get_current_user)):
+    shop = get_shop_by_owner(user.id)
+    if shop:
+        return {
+            "id": shop.id,
+            "shop_name": shop.shop_name,
+            "owner_name": user.full_name or user.username,
+            "shop_type": shop.shop_type or "General Retail",
+            "address": shop.address or "",
+            "city": shop.city or "",
+            "state": shop.state or "",
+            "pin_code": shop.pin_code or "",
+            "phone": user.phone or "",
+            "email": user.email or "",
+        }
 
-    # Fallback to legacy single-tenant table if unauthenticated request
-    details = get_shop_details()
-    if not details:
-        return {}
-    return {
-        "shop_name": details.shop_name,
-        "owner_name": details.owner_name,
-        "shop_type": details.shop_type,
-        "address": details.address,
-        "phone": details.phone,
-        "camera_count": details.camera_count,
-    }
+    raise HTTPException(status_code=404, detail="Shop not found.")
 
 
 # --- Camera Setup & Testing Endpoints ---
 
 @app.post("/api/cameras/test-connection")
-async def test_camera_connection_endpoint(payload: TestCameraPayload):
+async def test_camera_connection_endpoint(payload: TestCameraPayload, user: AdminUser = Depends(get_current_user)):
     mode = (payload.mode or "demo").lower()
 
     if mode == "demo":
@@ -556,12 +566,11 @@ async def save_camera(payload: CameraConfigPayload, user: AdminUser = Depends(ge
 
 
 @app.get("/api/cameras")
-async def list_cameras(user_opt: Optional[AdminUser] = Depends(get_current_user_optional)):
+async def list_cameras(user: AdminUser = Depends(get_current_user)):
     shop_id = None
-    if user_opt:
-        shop = get_shop_by_owner(user_opt.id)
-        if shop:
-            shop_id = shop.id
+    shop = get_shop_by_owner(user.id)
+    if shop:
+        shop_id = shop.id
 
     cameras = list_camera_configs(shop_id=shop_id)
     return [sanitize_camera_config_dict(row) for row in cameras]
@@ -570,35 +579,40 @@ async def list_cameras(user_opt: Optional[AdminUser] = Depends(get_current_user_
 # --- Status, Activity & Frame Endpoints ---
 
 @app.get("/api/status")
-def get_status():
+def get_status(user: AdminUser = Depends(get_current_user)):
     return load_state()
 
 
 @app.get("/api/activity")
-def get_activity():
+def get_activity(user: AdminUser = Depends(get_current_user)):
     return load_state()["recent_activity"]
 
 
 @app.get("/api/snapshot")
-def get_snapshot():
+def get_snapshot(user: AdminUser = Depends(get_current_user)):
     return {"latest_snapshot": load_state()["latest_snapshot"]}
 
 
 @app.get("/api/snapshot-image")
-def get_snapshot_image(file: str):
-    image_path = os.path.join(BASE_DIR, "Snapshots", file)
-    if not os.path.exists(image_path):
+def get_snapshot_image(file: str, user: AdminUser = Depends(get_current_user_flexible)):
+    # Path traversal guard: only bare filenames inside Snapshots/ may be served.
+    requested_name = os.path.basename(file.replace("\\", "/"))
+    if not requested_name or requested_name != file or file.startswith("."):
+        return {"error": "Invalid filename"}
+    if not requested_name.lower().endswith((".jpg", ".jpeg", ".png")):
+        return {"error": "Invalid file type"}
+    image_path = os.path.join(BASE_DIR, "Snapshots", requested_name)
+    if not os.path.isfile(image_path):
         return {"error": "Image not found"}
     return FileResponse(image_path, media_type="image/jpeg")
 
 
 @app.get("/api/snapshots")
-def get_snapshots(user_opt: Optional[AdminUser] = Depends(get_current_user_optional)):
+def get_snapshots(user: AdminUser = Depends(get_current_user)):
     shop_id = None
-    if user_opt:
-        shop = get_shop_by_owner(user_opt.id)
-        if shop:
-            shop_id = shop.id
+    shop = get_shop_by_owner(user.id)
+    if shop:
+        shop_id = shop.id
     
     try:
         rows = list_snapshots(limit=100, shop_id=shop_id)
@@ -617,7 +631,7 @@ def get_snapshots(user_opt: Optional[AdminUser] = Depends(get_current_user_optio
 
 
 @app.get("/api/frame")
-def get_frame(camera: int):
+def get_frame(camera: int, user: AdminUser = Depends(get_current_user_flexible)):
     if camera == 1:
         filename = "camera1.jpg"
     elif camera == 2:
@@ -631,8 +645,66 @@ def get_frame(camera: int):
     return FileResponse(path, media_type="image/jpeg")
 
 
+async def mjpeg_generator(camera_id: int):
+    """Decoupled in-memory MJPEG frame generator for smooth browser video playback."""
+    last_id = -1
+    while True:
+        jpeg_bytes, frame_id = latest_frames.get_jpeg(camera_id)
+        if jpeg_bytes is not None and frame_id != last_id:
+            last_id = frame_id
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + jpeg_bytes + b"\r\n"
+            )
+        elif jpeg_bytes is None:
+            # Fallback to reading disk snapshot if in-memory buffer not populated yet
+            filename = f"camera{camera_id}.jpg"
+            disk_path = os.path.join(FRAME_DIR, filename)
+            if os.path.exists(disk_path):
+                try:
+                    with open(disk_path, "rb") as f:
+                        disk_bytes = f.read()
+                    yield (
+                        b"--frame\r\n"
+                        b"Content-Type: image/jpeg\r\n\r\n" + disk_bytes + b"\r\n"
+                    )
+                except Exception:
+                    pass
+        await asyncio.sleep(0.033)
+
+
+@app.get("/api/stream")
+async def stream_camera(camera: int, user: AdminUser = Depends(get_current_user_flexible)):
+    if camera not in (1, 2):
+        raise HTTPException(status_code=400, detail="Invalid camera number")
+    return StreamingResponse(
+        mjpeg_generator(camera),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
+@app.get("/api/storage/status")
+def get_storage_status_endpoint(user: AdminUser = Depends(get_current_user)):
+    """Read-only storage/retention counters for the Settings page."""
+    try:
+        from Utils.retention import get_storage_status
+        return get_storage_status()
+    except Exception as error:
+        print(f"Storage status failed: {error}")
+        return {
+            "screenshots_used": 0,
+            "screenshots_max": 500,
+            "customer_visit_records": 0,
+            "alert_records": 0,
+            "screenshot_retention_days": 7,
+            "log_retention_days": 30,
+            "last_cleanup": "",
+            "error": "unavailable",
+        }
+
+
 @app.get("/api/camera-info")
-def get_camera_info():
+def get_camera_info(user: AdminUser = Depends(get_current_user)):
     return {
         "camera1": get_camera_frame_dimensions(1),
         "camera2": get_camera_frame_dimensions(2),
@@ -642,19 +714,16 @@ def get_camera_info():
 # --- Zone Endpoints ---
 
 @app.post("/api/save-zone")
-async def save_zone_endpoint(zone: ZoneData, user_opt: Optional[AdminUser] = Depends(get_current_user_optional)):
+async def save_zone_endpoint(zone: ZoneData, user: AdminUser = Depends(get_current_user)):
     # 1. Save to JSON for immediate detection engine reading
     filename = os.path.join(ZONE_DIR, f"camera{zone.camera}.json")
     with open(filename, "w", encoding="utf-8") as f:
         json.dump({"shape": zone.shape, "points": zone.points}, f, indent=4)
 
     # 2. Save to Database
-    if user_opt:
-        shop = get_shop_by_owner(user_opt.id)
-        if shop:
-            save_zone_for_shop(shop.id, zone.camera, zone.shape, zone.points)
-        else:
-            save_zone(zone.camera, zone.shape, zone.points)
+    shop = get_shop_by_owner(user.id)
+    if shop:
+        save_zone_for_shop(shop.id, zone.camera, zone.shape, zone.points)
     else:
         save_zone(zone.camera, zone.shape, zone.points)
 
@@ -662,18 +731,17 @@ async def save_zone_endpoint(zone: ZoneData, user_opt: Optional[AdminUser] = Dep
 
 
 @app.get("/api/load-zone")
-async def load_zone_endpoint(camera: int, user_opt: Optional[AdminUser] = Depends(get_current_user_optional)):
+async def load_zone_endpoint(camera: int, user: AdminUser = Depends(get_current_user)):
     filename = os.path.join(ZONE_DIR, f"camera{camera}.json")
     if os.path.exists(filename):
         with open(filename, encoding="utf-8") as f:
             return json.load(f)
 
-    if user_opt:
-        shop = get_shop_by_owner(user_opt.id)
-        if shop:
-            db_zone = load_zone_for_shop(shop.id, camera)
-            if db_zone:
-                return db_zone
+    shop = get_shop_by_owner(user.id)
+    if shop:
+        db_zone = load_zone_for_shop(shop.id, camera)
+        if db_zone:
+            return db_zone
 
     db_zone = load_zone(camera)
     if db_zone:
@@ -685,17 +753,17 @@ async def load_zone_endpoint(camera: int, user_opt: Optional[AdminUser] = Depend
 # --- Alert & Customers Endpoints ---
 
 @app.get("/api/customers")
-async def customers():
+async def customers(user: AdminUser = Depends(get_current_user)):
     return list_customer_visits(limit=50)
 
 
 @app.get("/api/alerts")
-async def alerts():
+async def alerts(user: AdminUser = Depends(get_current_user)):
     return list_alerts(limit=50)
 
 
 @app.post("/api/alerts")
-async def create_alert(payload: dict):
+async def create_alert(payload: dict, user: AdminUser = Depends(get_current_user)):
     alert = add_alert(
         payload.get("title", "Alert"),
         payload.get("message", ""),
@@ -706,23 +774,22 @@ async def create_alert(payload: dict):
 
 
 @app.get("/api/settings")
-async def settings():
+async def settings(user: AdminUser = Depends(get_current_user)):
     return get_all_settings()
 
 
 @app.post("/api/settings")
-async def save_setting(payload: SettingsPayload):
+async def save_setting(payload: SettingsPayload, user: AdminUser = Depends(get_current_user)):
     set_system_setting(payload.key, payload.value)
     return {"success": True}
 
 
 @app.post("/api/snapshots")
-async def save_snapshot_record(payload: dict, user_opt: Optional[AdminUser] = Depends(get_current_user_optional)):
+async def save_snapshot_record(payload: dict, user: AdminUser = Depends(get_current_user)):
     shop_id = None
-    if user_opt:
-        shop = get_shop_by_owner(user_opt.id)
-        if shop:
-            shop_id = shop.id
+    shop = get_shop_by_owner(user.id)
+    if shop:
+        shop_id = shop.id
 
     record = add_snapshot(
         payload.get("filename", ""),

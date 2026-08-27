@@ -26,6 +26,10 @@ export function ShopLayout({ children }: { children: React.ReactNode }) {
     }
   }, [ready, loading, user, cfg.onboarded, navigate]);
 
+  if (loading || !ready || !user || !cfg.onboarded) {
+    return null;
+  }
+
   const handleLogout = () => {
     logout();
     navigate({ to: "/" });

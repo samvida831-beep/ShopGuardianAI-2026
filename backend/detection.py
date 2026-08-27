@@ -3,7 +3,7 @@ import json
 import time
 import threading
 from datetime import datetime
-from state import shop_state
+from state import shop_state, latest_frames
 import cv2
 try:
     import winsound
@@ -53,7 +53,7 @@ CAMERA2_EARLY_MARGIN = 40
 
 def save_snapshot(frame):
     """Save the single snapshot associated with a confirmed customer entry."""
-    filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S.jpg")
+    filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f.jpg")
     filepath = os.path.join(SNAPSHOT_DIR, filename)
     cv2.imwrite(filepath, frame)
     print("Snapshot saved:", filepath)
@@ -157,12 +157,19 @@ def main():
     load_camera1_zone()
     load_camera2_zone()
 
-    headless = os.getenv("HEADLESS", "false" if os.name != "nt" else "true").lower() == "true"
+    # Headless by default on every platform: cloud/Linux hosts have no display and
+    # cv2.namedWindow would crash the detection thread. Set HEADLESS=false locally
+    # to enable the OpenCV preview/zone-editor windows.
+    headless = os.getenv("HEADLESS", "true").lower() == "true"
     if not headless:
-        cv2.namedWindow(WINDOW_NAME)
-        cv2.setMouseCallback(WINDOW_NAME, camera1_mouse_callback)
-        cv2.namedWindow(CAMERA2_WINDOW_NAME)
-        cv2.setMouseCallback(CAMERA2_WINDOW_NAME, camera2_mouse_callback)
+        try:
+            cv2.namedWindow(WINDOW_NAME)
+            cv2.setMouseCallback(WINDOW_NAME, camera1_mouse_callback)
+            cv2.namedWindow(CAMERA2_WINDOW_NAME)
+            cv2.setMouseCallback(CAMERA2_WINDOW_NAME, camera2_mouse_callback)
+        except cv2.error as gui_error:
+            print(f"GUI unavailable, continuing headless: {gui_error}")
+            headless = True
 
     customer_count = 0
     shop_occupied = False
@@ -334,7 +341,16 @@ def main():
                 except Exception:
                     pass
 
-            # Rate-limit frame saves to disk (max 10 fps) to avoid heavy disk I/O thrashing
+            # In-memory JPEG encoding for real-time decoupled streaming
+            ret1, buf1 = cv2.imencode('.jpg', camera1_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            if ret1:
+                latest_frames.set_frame(1, buf1.tobytes())
+
+            ret2, buf2 = cv2.imencode('.jpg', camera2_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            if ret2:
+                latest_frames.set_frame(2, buf2.tobytes())
+
+            # Rate-limit frame saves to disk (max 10 fps) to maintain fallback /api/frame compatibility
             if now - last_frame_save_time >= 0.1:
                 cv2.imwrite(os.path.join(FRAME_DIR, "camera1.jpg"), camera1_frame)
                 cv2.imwrite(os.path.join(FRAME_DIR, "camera2.jpg"), camera2_frame)

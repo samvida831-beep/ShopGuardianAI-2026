@@ -1,22 +1,22 @@
 {
-    "occupied": false,
-    "shop_status": "Empty",
-    "customer_count": 234,
-    "last_detection": "2026-08-24 21:41:10",
+    "occupied": true,
+    "shop_status": "Occupied",
+    "customer_count": 9,
+    "last_detection": "2026-08-27 21:10:51",
     "camera1": "Online",
     "camera2": "Online",
     "recent_activity": [
-        "Customer entered at 2026-08-24 21:41:10",
-        "Shop became empty at 2026-08-24 21:41:05",
-        "Customer entered at 2026-08-24 21:40:59",
-        "Shop became empty at 2026-08-24 21:40:53",
-        "Customer entered at 2026-08-24 21:40:46",
-        "Shop became empty at 2026-08-24 21:40:43",
-        "Customer entered at 2026-08-24 21:40:36",
-        "Shop became empty at 2026-08-24 21:40:30",
-        "Customer entered at 2026-08-24 21:40:24",
-        "Shop became empty at 2026-08-24 21:40:20"
+        "Shop became empty at 2026-08-27 21:11:10",
+        "Customer entered at 2026-08-27 21:10:51",
+        "Shop became empty at 2026-08-27 21:10:45",
+        "Customer entered at 2026-08-27 21:10:25",
+        "Shop became empty at 2026-08-27 21:10:18",
+        "Customer entered at 2026-08-27 21:09:57",
+        "Shop became empty at 2026-08-27 21:09:50",
+        "Customer entered at 2026-08-27 21:09:30",
+        "Shop became empty at 2026-08-27 21:09:23",
+        "Customer entered at 2026-08-27 21:09:02"
     ],
-    "latest_snapshot": "2026-08-24_21-41-10.jpg",
-    "last_updated": "2026-08-24 21:41:18"
+    "latest_snapshot": "2026-08-27_21-11-16_901469.jpg",
+    "last_updated": "2026-08-27 21:11:16"
 }

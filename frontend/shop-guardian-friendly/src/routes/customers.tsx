@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { ShopLayout } from "@/components/ShopLayout";
-import { getCustomers, type CustomerVisitRecord } from "@/lib/api";
+import { getCustomers, getSnapshotImageUrl, type CustomerVisitRecord } from "@/lib/api";
 
 export const Route = createFileRoute("/customers")({
   head: () => ({
@@ -78,7 +78,7 @@ function CustomerHistory() {
                     <span className="pill bg-brand-soft text-brand">Camera {c.camera_number}</span>
                   </td>
                   <td className="rounded-r-2xl px-4 py-2">
-                    {c.snapshot_file ? <img src={`http://127.0.0.1:8000/api/snapshot-image?file=${c.snapshot_file}`} alt="snap" className="h-12 w-16 rounded-lg object-cover" loading="lazy" /> : <span className="text-xs text-muted-foreground">No snapshot</span>}
+                    {c.snapshot_file ? <img src={getSnapshotImageUrl(c.snapshot_file)} alt="snap" className="h-12 w-16 rounded-lg object-cover" loading="lazy" /> : <span className="text-xs text-muted-foreground">No snapshot</span>}
                   </td>
                 </tr>
               ))}

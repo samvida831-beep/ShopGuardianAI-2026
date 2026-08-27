@@ -5,7 +5,7 @@ import { Mascot, mascotOptions } from "@/components/Mascot";
 import { useShopConfig, type Avatar } from "@/lib/shop-store";
 import { Check, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
-import { getSettings, saveSetting, getShopDetails, setupShop } from "@/lib/api";
+import { getSettings, saveSetting, getShopDetails, setupShop, getStorageStatus, type StorageStatus } from "@/lib/api";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -24,6 +24,7 @@ function Settings() {
   const [alertSound, setAlertSound] = useState(true);
   const [saveSnaps, setSaveSnaps] = useState(true);
   const [autoStart, setAutoStart] = useState(false);
+  const [storage, setStorage] = useState<StorageStatus | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -34,7 +35,7 @@ function Settings() {
         setAutoStart(data.auto_start === "true");
         const shop = await getShopDetails();
         if (shop.shop_name || shop.owner_name || shop.shop_type) {
-          setCfg({ ...cfg, shopName: shop.shop_name || cfg.shopName, ownerName: shop.owner_name || cfg.ownerName, shopType: shop.shop_type || cfg.shopType });
+          setCfg({ ...cfg, shopName: shop.shop_name || cfg.shopName, ownerName: shop.ownerName || cfg.ownerName, shopType: shop.shop_type || cfg.shopType });
         }
       } catch (error) {
         console.error(error);
@@ -42,6 +43,18 @@ function Settings() {
     }
 
     load();
+
+    async function loadStorage() {
+      try {
+        setStorage(await getStorageStatus());
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    loadStorage();
+    const storageInterval = setInterval(loadStorage, 60000);
+    return () => clearInterval(storageInterval);
   }, []);
 
   const persistToggle = async (key: string, value: boolean) => {
@@ -51,6 +64,18 @@ function Settings() {
   return (
     <ShopLayout>
       <div className="grid gap-6 lg:grid-cols-2">
+        <section className="glass-card p-6">
+          <h2 className="text-xl font-extrabold">Storage Management</h2>
+          <p className="text-sm text-muted-foreground">Automatic cleanup keeps your storage healthy.</p>
+          <div className="mt-5 space-y-2 text-sm">
+            <StorageRow label="Screenshots" value={storage ? `${storage.screenshots_used} / ${storage.screenshots_max}` : "…"} />
+            <StorageRow label="Activity Records" value={storage ? `${storage.customer_visit_records + storage.alert_records} records` : "…"} />
+            <StorageRow label="Screenshot Retention" value={`${storage?.screenshot_retention_days ?? 7} days`} />
+            <StorageRow label="Log Retention" value={`${storage?.log_retention_days ?? 30} days`} />
+            <StorageRow label="Last Cleanup" value={storage?.last_cleanup ? new Date(storage.last_cleanup).toLocaleString() : "Not yet run"} />
+          </div>
+        </section>
+
         <section className="glass-card p-6">
           <h2 className="text-xl font-extrabold">Preferences</h2>
           <p className="text-sm text-muted-foreground">Simple controls, no tech setup needed.</p>
@@ -102,6 +127,15 @@ function Settings() {
         </section>
       </div>
     </ShopLayout>
+  );
+}
+
+function StorageRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between rounded-2xl bg-secondary/60 px-4 py-3">
+      <span className="font-bold">{label}</span>
+      <span className="font-extrabold tabular-nums text-brand">{value}</span>
+    </div>
   );
 }
 

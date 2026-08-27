@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import time
@@ -161,7 +162,8 @@ SessionLocal = None
 
 
 def get_db_url():
-    return os.getenv("SHOPGUARDIAN_DB_URL", "sqlite:///./shopguardian.db")
+    default_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shopguardian.db")
+    return os.getenv("SHOPGUARDIAN_DB_URL", f"sqlite:///{default_db}")
 
 
 def _get_secret_key():
@@ -243,6 +245,12 @@ def init_db(url: Optional[str] = None):
     SessionLocal = sessionmaker(bind=ENGINE, autoflush=False, autocommit=False)
     Base.metadata.create_all(bind=ENGINE)
 
+    if os.getenv("SHOPGUARDIAN_SECRET_KEY") is None:
+        logging.warning(
+            "SHOPGUARDIAN_SECRET_KEY is not set. Using a demo default secret. "
+            "Set a strong random value in production so auth tokens cannot be forged."
+        )
+
     if ENGINE.dialect.name == "sqlite":
         _ensure_sqlite_column(ENGINE, "admin_users", "phone", "VARCHAR(50)")
         _ensure_sqlite_column(ENGINE, "admin_users", "email", "VARCHAR(150)")
@@ -264,17 +272,21 @@ def init_db(url: Optional[str] = None):
         _ensure_sqlite_column(ENGINE, "saved_zones", "shop_id", "INTEGER")
         _ensure_sqlite_column(ENGINE, "snapshots", "shop_id", "INTEGER")
 
-    with SessionLocal() as session:
-        if session.query(AdminUser).count() == 0:
-            session.add(
-                AdminUser(
-                    username="admin",
-                    password_hash=_hash_password("admin"),
-                    full_name="Demo Admin",
-                    role="admin",
+    # Default admin account is created ONLY when explicitly enabled via env
+    # (SEED_DEMO_ADMIN=true, default off). Fresh installs should use the
+    # standard /api/auth/register flow instead of a built-in credential.
+    if os.getenv("SEED_DEMO_ADMIN", "false").lower() == "true":
+        with SessionLocal() as session:
+            if session.query(AdminUser).count() == 0:
+                session.add(
+                    AdminUser(
+                        username="admin",
+                        password_hash=_hash_password("admin"),
+                        full_name="Demo Admin",
+                        role="admin",
+                    )
                 )
-            )
-            session.commit()
+                session.commit()
 
     return ENGINE
 
@@ -358,8 +370,6 @@ def authenticate_admin(username: str, password: str) -> Optional[AdminUser]:
     session.close()
     if not user:
         return None
-    if user.password_hash == "demo-hash" and password == "admin":
-        return user
     return user if _verify_password(password, user.password_hash) else None
 
 
@@ -499,8 +509,7 @@ def upsert_camera_config(
         config.port = port
     if username:
         config.username = username
-    if password:
-        config.password = password
+    config.password = password
     if channel:
         config.channel = channel
     if subtype:
