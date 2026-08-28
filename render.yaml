@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: shopguardian-ai-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: CAMERA_MODE
+        value: demo
+      - key: HEADLESS
+        value: "true"
