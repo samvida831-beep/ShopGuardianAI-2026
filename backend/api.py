@@ -5,7 +5,8 @@ import threading
 import cv2
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Header, Depends
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -20,6 +21,7 @@ from database import (
     create_admin_user,
     create_shop_for_owner,
     delete_camera_config,
+    delete_snapshot_by_filename,
     generate_auth_token,
     get_admin_user_by_id,
     get_admin_user_by_username,
@@ -277,9 +279,12 @@ app = FastAPI(title="ShopGuardian AI API")
 dev_origins = [
     "http://localhost:8080",
     "http://localhost:5173",
+    "http://localhost:3000",
     "http://127.0.0.1:8080",
     "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
     "http://127.0.0.1:8000",
+    "http://localhost:8000",
     "http://192.168.1.8:8080",
 ]
 cors_env = os.getenv("CORS_ORIGINS", "")
@@ -290,6 +295,7 @@ if cors_env:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -630,6 +636,41 @@ def get_snapshots(user: AdminUser = Depends(get_current_user)):
     return files
 
 
+@app.delete("/api/snapshots/{filename}")
+def delete_snapshot_endpoint(filename: str, user: AdminUser = Depends(get_current_user)):
+    requested_name = os.path.basename(filename.replace("\\", "/"))
+    if not requested_name or requested_name != filename or filename.startswith("."):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    shop_id = None
+    shop = get_shop_by_owner(user.id)
+    if shop:
+        shop_id = shop.id
+
+    # 1. Delete record from database
+    delete_snapshot_by_filename(requested_name, shop_id=shop_id)
+
+    # 2. Delete physical image file permanently from disk
+    image_path = os.path.join(BASE_DIR, "Snapshots", requested_name)
+    if os.path.isfile(image_path):
+        try:
+            os.remove(image_path)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to delete snapshot file: {str(e)}")
+
+    # 3. Update shared_state if deleted snapshot was latest_snapshot
+    try:
+        current_state = load_state()
+        if current_state.get("latest_snapshot") == requested_name:
+            current_state["latest_snapshot"] = ""
+            with open(STATE_FILE, "w", encoding="utf-8") as f:
+                json.dump(current_state, f, indent=4)
+    except Exception:
+        pass
+
+    return {"success": True, "message": f"Snapshot {requested_name} permanently deleted."}
+
+
 @app.get("/api/frame")
 def get_frame(camera: int, user: AdminUser = Depends(get_current_user_flexible)):
     if camera == 1:
@@ -799,3 +840,35 @@ async def save_snapshot_record(payload: dict, user: AdminUser = Depends(get_curr
         shop_id=shop_id,
     )
     return {"success": True, "snapshot": {"id": record.id, "filename": record.filename}}
+
+
+# --- Single-Service Static Frontend Serving ---
+#
+# When deployed as one Render Web Service, FastAPI serves the frontend's
+# production build (from Nitro's .output/public/) alongside the API.
+# STATIC_DIR env var can override the default path.  The SPA catch-all MUST
+# be added LAST so all /api/* routes above take priority.
+
+_STATIC_DEFAULT = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..", "frontend", "shop-guardian-friendly", ".output", "public"
+)
+STATIC_DIR = os.getenv("STATIC_DIR", _STATIC_DEFAULT)
+
+if os.path.isdir(STATIC_DIR):
+    _index_path = os.path.join(STATIC_DIR, "index.html")
+
+    # Mount hashed assets under /assets so their cache headers work correctly.
+    _assets_dir = os.path.join(STATIC_DIR, "assets")
+    if os.path.isdir(_assets_dir):
+        app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_spa(full_path: str):
+        """Catch-all: serve the requested file if it exists, else index.html."""
+        candidate = os.path.join(STATIC_DIR, full_path)
+        if full_path and os.path.isfile(candidate):
+            return FileResponse(candidate)
+        if os.path.isfile(_index_path):
+            return HTMLResponse(open(_index_path, encoding="utf-8").read())
+        return HTMLResponse("<h1>Frontend build not found</h1>", status_code=404)

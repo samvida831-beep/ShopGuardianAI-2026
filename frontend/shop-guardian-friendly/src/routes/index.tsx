@@ -142,6 +142,7 @@ export function Onboarding() {
 
       if (res.shop && res.shop.shop_name) {
         setCfg({
+          ...cfg,
           shopName: res.shop.shop_name,
           ownerName: res.user.full_name || res.user.username,
           shopType: res.shop.shop_type || "General Retail",
@@ -273,6 +274,7 @@ export function Onboarding() {
       await saveCameraConfig(cam2);
 
       setCfg({
+        ...cfg,
         shopName: shopName || "My Shop",
         ownerName: ownerName || "Owner",
         shopType: shopType || "General Retail",

@@ -1,12 +1,43 @@
 services:
   - type: web
-    name: shopguardian-ai-backend
+    name: shopguardian-ai
     runtime: python
-    rootDir: backend
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: python main.py
+    # Build: install Python deps + Node deps + build the frontend
+    buildCommand: >
+      pip install --upgrade pip &&
+      pip install -r backend/requirements.txt &&
+      cd frontend/shop-guardian-friendly &&
+      npm ci &&
+      npm run build
+    # Start: FastAPI (from backend/) serves both /api/* and the built frontend
+    startCommand: cd backend && python main.py
     envVars:
+      # --- Camera / Detection ---
       - key: CAMERA_MODE
         value: demo
       - key: HEADLESS
         value: "true"
+
+      # --- Frontend static assets (relative to repo root at runtime) ---
+      # FastAPI resolves STATIC_DIR from the backend/ working directory.
+      - key: STATIC_DIR
+        value: ../frontend/shop-guardian-friendly/.output/public
+
+      # --- Auth secret (REQUIRED for production token security) ---
+      # Replace the value below with a long random string before deploying,
+      # or use Render's "Generate Value" option on this key.
+      - key: SHOPGUARDIAN_SECRET_KEY
+        generateValue: true
+
+      # --- Demo admin account for evaluation ---
+      # Creates username=admin / password=admin on the first cold start
+      # when the database is empty.  Set to false after the first login.
+      - key: SEED_DEMO_ADMIN
+        value: "true"
+
+      # --- CORS ---
+      # In single-service mode the frontend and API share the same origin,
+      # so no extra CORS origins are needed.  Add a value here only if you
+      # also access the API from a separate frontend domain.
+      - key: CORS_ORIGINS
+        value: ""

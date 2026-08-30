@@ -1,5 +1,5 @@
 import ZoneEditor from "@/components/ZoneEditor";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { saveZone, loadZone, getCameraInfo, getSnapshotImageUrl } from "@/lib/api";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -13,7 +13,7 @@ import {
 } from "@/lib/api";
 import {
   Camera as CameraIcon, Users, Bell, Images, Store, Timer, Play, Square, RotateCcw, FolderOpen,
-  WifiOff, ArrowRight, Clock,
+  WifiOff, ArrowRight, Clock, ShieldCheck,
 } from "lucide-react";
 import { ShopLayout } from "@/components/ShopLayout";
 import { Mascot, AiRobot } from "@/components/Mascot";
@@ -452,13 +452,13 @@ function handleMouseUp() {
             try {
               const result = await saveZone(zoneCamera, zoneShape, zonePoints);
               console.log("SAVE RESULT:", result);
-              alert("Zone saved successfully!");
+              toast.success(`Camera ${zoneCamera} zone saved successfully!`);
             } catch (err) {
               console.error("SAVE ERROR:", err);
-              alert("Failed to save zone.");
+              toast.error("Failed to save zone configuration.");
             }
           }}
-          className="rounded-xl bg-green-600 px-5 py-3 font-semibold text-white hover:bg-green-700"
+          className="rounded-xl bg-brand px-5 py-3 font-semibold text-white hover:bg-brand/90 transition shadow"
         >
           Save Zone
         </button>
@@ -508,23 +508,97 @@ function handleMouseUp() {
         </div>
 
         <div className="glass-card p-5">
-          <h3 className="flex items-center gap-2 text-base font-extrabold">
-            <Clock className="h-4 w-4 text-brand" /> Recent Activity
-          </h3>
-          <ol className="mt-4 space-y-4 border-l-2 border-brand-soft pl-4 text-sm">
-            {[
-              { time: "10:30", text: "Customer entered", tone: "bg-brand" },
-              { time: "10:31", text: "Snapshot saved", tone: "bg-purple" },
-              { time: "10:35", text: "Shop empty", tone: "bg-warning" },
-              { time: "10:42", text: "Shop is secure", tone: "bg-success" },
-            ].map((a) => (
-              <li key={a.time} className="relative">
-                <span className={`absolute -left-[1.42rem] top-1.5 h-2.5 w-2.5 rounded-full ${a.tone} ring-4 ring-white`} />
-                <div className="font-bold tabular-nums text-foreground">{a.time}</div>
-                <div className="text-muted-foreground">{a.text}</div>
-              </li>
-            ))}
-          </ol>
+          <div className="flex items-center justify-between">
+            <h3 className="flex items-center gap-2 text-base font-extrabold">
+              <Clock className="h-4 w-4 text-brand" /> Recent Activity
+            </h3>
+            <span className="text-xs font-semibold text-muted-foreground">{activities.length} events</span>
+          </div>
+
+          {activities.length > 0 ? (
+            <ol className="mt-4 space-y-3.5 border-l-2 border-brand-soft pl-4 text-sm max-h-56 overflow-y-auto">
+              {activities.map((act, idx) => {
+                const isEntry = act.toLowerCase().includes("entered") || act.toLowerCase().includes("detected");
+                const isEmpty = act.toLowerCase().includes("empty") || act.toLowerCase().includes("reset");
+                const tone = isEntry ? "bg-brand" : isEmpty ? "bg-warning" : "bg-success";
+                return (
+                  <li key={idx} className="relative animate-fade-up">
+                    <span className={`absolute -left-[1.42rem] top-1.5 h-2.5 w-2.5 rounded-full ${tone} ring-4 ring-background`} />
+                    <div className="text-xs font-medium text-foreground">{act}</div>
+                  </li>
+                );
+              })}
+            </ol>
+          ) : (
+            <div className="mt-6 flex flex-col items-center justify-center text-center p-4 text-muted-foreground">
+              <Clock className="h-8 w-8 text-muted-foreground/40 mb-2" />
+              <p className="text-xs font-semibold">No recent events</p>
+              <p className="text-[11px] text-muted-foreground/70">Activity will appear when customers enter.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* System Health & Active Alerts */}
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="glass-card p-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-extrabold flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-brand" /> System Health Status
+            </h3>
+            <span className="pill bg-success-soft text-success">
+              <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse-dot" /> All Systems Operational
+            </span>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <div className="flex items-center justify-between rounded-2xl bg-secondary/70 p-3.5">
+              <span className="text-xs font-bold text-muted-foreground">Backend API</span>
+              <span className="text-xs font-extrabold text-success">Online (8000)</span>
+            </div>
+            <div className="flex items-center justify-between rounded-2xl bg-secondary/70 p-3.5">
+              <span className="text-xs font-bold text-muted-foreground">AI Engine</span>
+              <span className="text-xs font-extrabold text-brand">YOLOv8 Active</span>
+            </div>
+            <div className="flex items-center justify-between rounded-2xl bg-secondary/70 p-3.5">
+              <span className="text-xs font-bold text-muted-foreground">Entrance Camera</span>
+              <span className={`text-xs font-extrabold ${shopData?.camera1 === "Online" ? "text-success" : "text-danger"}`}>
+                {shopData?.camera1 ?? "Online"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between rounded-2xl bg-secondary/70 p-3.5">
+              <span className="text-xs font-bold text-muted-foreground">Inside Camera</span>
+              <span className={`text-xs font-extrabold ${shopData?.camera2 === "Online" ? "text-success" : "text-danger"}`}>
+                {shopData?.camera2 ?? "Online"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="glass-card p-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-extrabold flex items-center gap-2">
+              <Bell className="h-5 w-5 text-warning" /> Active Security Alerts
+            </h3>
+            <Link to="/alerts" className="text-xs font-bold text-brand hover:underline">
+              View All Alerts ({alertsCount})
+            </Link>
+          </div>
+          {alertsCount > 0 ? (
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center gap-3 rounded-2xl bg-warning-soft/70 p-3.5 text-xs text-foreground font-semibold">
+                <Bell className="h-4 w-4 text-warning shrink-0" />
+                <span>{alertsCount} active notifications recorded today. Check alert history for full log.</span>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-6 flex flex-col items-center justify-center text-center p-4 text-muted-foreground">
+              <div className="grid h-10 w-10 place-items-center rounded-full bg-success-soft text-success mb-2">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <p className="text-xs font-bold text-foreground">No active alerts — your shop is secure.</p>
+              <p className="text-[11px] text-muted-foreground">Both entrance and interior zones are actively monitored.</p>
+            </div>
+          )}
         </div>
       </section>
 

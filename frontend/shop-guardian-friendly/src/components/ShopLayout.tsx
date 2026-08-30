@@ -161,21 +161,24 @@ export function ShopLayout({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* Mobile bottom nav */}
-      <nav className="fixed bottom-3 left-1/2 z-40 flex -translate-x-1/2 gap-1 rounded-full border border-white/70 bg-white/80 px-2 py-2 shadow-[var(--shadow-card)] backdrop-blur-xl lg:hidden">
-        {NAV.slice(0, 5).map((item) => {
+      {/* Mobile bottom nav - All 6 sections */}
+      <nav aria-label="Mobile Navigation" className="fixed bottom-2 left-1/2 z-40 flex w-[96%] max-w-md -translate-x-1/2 justify-around gap-1 rounded-2xl border border-border/80 bg-background/90 p-1.5 shadow-[var(--shadow-card)] backdrop-blur-xl lg:hidden">
+        {NAV.map((item) => {
           const active = location.pathname === item.to;
           const Icon = item.icon;
           return (
             <Link
               key={item.to}
               to={item.to}
-              className={`grid h-11 w-11 place-items-center rounded-full transition ${
-                active ? "bg-gradient-to-br from-brand to-purple text-white" : "text-muted-foreground"
+              className={`flex flex-col items-center justify-center rounded-xl p-1.5 text-[10px] font-bold transition ${
+                active
+                  ? "bg-brand text-white shadow-sm"
+                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
               }`}
               title={item.label}
             >
-              <Icon className="h-5 w-5" />
+              <Icon className="h-4 w-4" />
+              <span className="mt-0.5 truncate max-w-[48px]">{item.label.split(" ")[0]}</span>
             </Link>
           );
         })}

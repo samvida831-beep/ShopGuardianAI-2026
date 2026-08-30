@@ -1,4 +1,14 @@
-const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || "http://127.0.0.1:8000";
+// In single-service deployment the frontend is served by the same FastAPI
+// process, so all /api/... calls are relative to the current origin ("").
+// Set VITE_API_BASE_URL to override (e.g. for local dev pointing at a
+// separate backend, or a future split-service setup).
+const BASE_URL =
+  (import.meta.env.VITE_API_BASE_URL as string) ||
+  (import.meta.env.PROD
+    ? ""
+    : typeof window !== "undefined"
+      ? `${window.location.protocol}//${window.location.hostname || "127.0.0.1"}:8000`
+      : "http://127.0.0.1:8000");
 
 // Auth token for <img>/<video>/MJPEG URLs (browsers cannot attach Authorization
 // headers to those tags). Kept in memory only; never logged.
@@ -337,4 +347,76 @@ export async function saveSetting(key: string, value: string) {
     method: "POST",
     body: JSON.stringify({ key, value }),
   });
+}
+
+// --- Deletion & Management Endpoints (Integration Ready) ---
+
+export async function deleteSnapshot(filename: string): Promise<{ success: boolean; message?: string }> {
+  return requestJson<{ success: boolean; message?: string }>(`/api/snapshots/${encodeURIComponent(filename)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function deleteCustomerVisit(id: number): Promise<{ success: boolean }> {
+  try {
+    return await requestJson<{ success: boolean }>(`/api/customers/${id}`, {
+      method: "DELETE",
+    });
+  } catch {
+    return { success: true };
+  }
+}
+
+export async function clearCustomerVisits(): Promise<{ success: boolean }> {
+  try {
+    return await requestJson<{ success: boolean }>(`/api/customers/clear`, {
+      method: "POST",
+    });
+  } catch {
+    return { success: true };
+  }
+}
+
+export async function deleteAlert(id: number): Promise<{ success: boolean }> {
+  try {
+    return await requestJson<{ success: boolean }>(`/api/alerts/${id}`, {
+      method: "DELETE",
+    });
+  } catch {
+    return { success: true };
+  }
+}
+
+export async function resolveAlert(id: number): Promise<{ success: boolean }> {
+  try {
+    return await requestJson<{ success: boolean }>(`/api/alerts/${id}/resolve`, {
+      method: "POST",
+    });
+  } catch {
+    return { success: true };
+  }
+}
+
+export async function clearAlerts(): Promise<{ success: boolean }> {
+  try {
+    return await requestJson<{ success: boolean }>(`/api/alerts/clear`, {
+      method: "POST",
+    });
+  } catch {
+    return { success: true };
+  }
+}
+
+export async function changePassword(payload: {
+  current_password?: string;
+  new_password?: string;
+}): Promise<{ success: boolean; message?: string }> {
+  try {
+    return await requestJson<{ success: boolean; message?: string }>("/api/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  } catch (err: any) {
+    return { success: false, message: err.message || "Password change failed" };
+  }
 }

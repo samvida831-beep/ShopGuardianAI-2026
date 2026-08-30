@@ -654,6 +654,26 @@ def delete_snapshot(snapshot_id: int, shop_id: Optional[int] = None) -> Optional
     return snapshot
 
 
+def delete_snapshot_by_filename(filename: str, shop_id: Optional[int] = None) -> bool:
+    from sqlalchemy import or_
+    session = get_session()
+    query = session.query(SnapshotRecord).filter(SnapshotRecord.filename == filename)
+    if shop_id is not None:
+        # Match records belonging to this shop OR records with no shop_id (legacy/unassigned)
+        query = query.filter(
+            or_(SnapshotRecord.shop_id == shop_id, SnapshotRecord.shop_id == None)
+        )
+    records = query.all()
+    deleted = False
+    for rec in records:
+        session.delete(rec)
+        deleted = True
+    if deleted:
+        session.commit()
+    session.close()
+    return deleted
+
+
 def add_alert(title: str, message: str, alert_type: str = "info", camera_number: Optional[int] = None) -> AlertRecord:
     session = get_session()
     alert = AlertRecord(title=title, message=message, alert_type=alert_type, camera_number=camera_number)
