@@ -112,19 +112,7 @@ export function Onboarding() {
   const [cam1TestResult, setCam1TestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [cam2TestResult, setCam2TestResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  // Auto-redirect if authenticated user already has a configured shop
-  useEffect(() => {
-    if (ready && !loading) {
-      if (user && shop && cfg.onboarded) {
-        navigate({ to: "/dashboard" });
-      } else if (user && !shop) {
-        setMode("shop_setup");
-        setOwnerName(user.full_name || user.username);
-        setUserPhone(user.phone || "");
-        setUserEmail(user.email || "");
-      }
-    }
-  }, [ready, loading, user, shop, cfg.onboarded, navigate]);
+
 
   // --- Actions ---
 
