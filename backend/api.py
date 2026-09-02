@@ -4,7 +4,7 @@ import os
 import threading
 import cv2
 from typing import Optional, List, Dict, Any
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import FastAPI, HTTPException, Header, Depends, Response
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr
@@ -673,17 +673,15 @@ def delete_snapshot_endpoint(filename: str, user: AdminUser = Depends(get_curren
 
 @app.get("/api/frame")
 def get_frame(camera: int, user: AdminUser = Depends(get_current_user_flexible)):
-    if camera == 1:
-        filename = "camera1.jpg"
-    elif camera == 2:
-        filename = "camera2.jpg"
-    else:
-        return {"error": "Invalid camera number"}
-
-    path = os.path.join(FRAME_DIR, filename)
-    if not os.path.exists(path):
-        return {"error": "Frame not available"}
-    return FileResponse(path, media_type="image/jpeg")
+    if camera not in (1, 2):
+        raise HTTPException(status_code=400, detail="Invalid camera number")
+    jpeg_bytes, _ = latest_frames.get_jpeg(camera)
+    if jpeg_bytes is None:
+        path = os.path.join(FRAME_DIR, f"camera{camera}.jpg")
+        if not os.path.exists(path):
+            return {"error": "Frame not available"}
+        return FileResponse(path, media_type="image/jpeg")
+    return Response(content=jpeg_bytes, media_type="image/jpeg")
 
 
 async def mjpeg_generator(camera_id: int):
