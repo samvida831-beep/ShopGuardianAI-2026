@@ -6,7 +6,7 @@ import {
   getStatus,
   getActivity,
   getCameraFrameUrl,
-  buildCameraFrameSrc,
+  getCameraStreamEventSrc,
   getAlerts,
   getSnapshots,
   type ShopStatus,
@@ -613,15 +613,24 @@ function handleMouseUp() {
 }
 
 function ModalCamera({ camera, onClose }: { camera: 1 | 2; onClose: () => void }) {
-  const [imgSrc, setImgSrc] = useState(buildCameraFrameSrc(camera));
+  const imgRef = useRef<HTMLImageElement>(null);
+  const streamSrc = useMemo(() => getCameraStreamEventSrc(camera), [camera]);
 
   useEffect(() => {
-    setImgSrc(buildCameraFrameSrc(camera));
-    const id = window.setInterval(() => {
-      setImgSrc(buildCameraFrameSrc(camera));
-    }, 150);
-    return () => window.clearInterval(id);
-  }, [camera]);
+    if (imgRef.current) {
+      imgRef.current.src = getCameraFrameUrl(camera);
+    }
+    const es = new EventSource(streamSrc);
+    es.onmessage = (event) => {
+      if (imgRef.current) {
+        imgRef.current.src = `data:image/jpeg;base64,${event.data}`;
+      }
+    };
+    es.onerror = () => {
+      es.close();
+    };
+    return () => es.close();
+  }, [streamSrc]);
 
   return (
     <div
@@ -644,7 +653,8 @@ function ModalCamera({ camera, onClose }: { camera: 1 | 2; onClose: () => void }
         </h2>
 
         <img
-          src={imgSrc}
+          ref={imgRef}
+          src={getCameraFrameUrl(camera)}
           alt="Live Camera"
           className="w-full rounded-2xl object-contain"
         />
@@ -680,18 +690,25 @@ function MiniStat({ label, value, caption }: { label: string; value: string; cap
 
 function CameraCard({ title, subtitle, src, offline, dim, onRetry }: { title: string; subtitle: string; src: string; offline?: boolean; dim?: boolean; onRetry?: () => void }) {
   const cameraNumber: 1 | 2 = src.includes("camera=1") ? 1 : 2;
-  const [imgSrc, setImgSrc] = useState(src);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const frameUrl = useMemo(() => getCameraFrameUrl(cameraNumber), [cameraNumber]);
+  const streamSrc = useMemo(() => getCameraStreamEventSrc(cameraNumber), [cameraNumber]);
 
   useEffect(() => {
-    setImgSrc(src);
-  }, [src]);
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      setImgSrc(buildCameraFrameSrc(cameraNumber));
-    }, 150);
-    return () => window.clearInterval(id);
-  }, [cameraNumber]);
+    if (imgRef.current) {
+      imgRef.current.src = frameUrl;
+    }
+    const es = new EventSource(streamSrc);
+    es.onmessage = (event) => {
+      if (imgRef.current) {
+        imgRef.current.src = `data:image/jpeg;base64,${event.data}`;
+      }
+    };
+    es.onerror = () => {
+      es.close();
+    };
+    return () => es.close();
+  }, [streamSrc, frameUrl]);
 
   return (
     <div className="overflow-hidden rounded-3xl bg-card shadow-[var(--shadow-card)]">
@@ -711,7 +728,7 @@ function CameraCard({ title, subtitle, src, offline, dim, onRetry }: { title: st
         )}
       </div>
       <div className="relative mx-4 mb-4 overflow-hidden rounded-2xl border border-border">
-        <img src={imgSrc} alt={title} className={`h-64 w-full object-contain transition ${dim ? "opacity-40 grayscale" : ""}`} loading="lazy" />
+        <img ref={imgRef} src={frameUrl} alt={title} className={`h-64 w-full object-contain transition ${dim ? "opacity-40 grayscale" : ""}`} loading="lazy" />
         {offline && (
           <div className="absolute inset-0 grid place-items-center bg-danger-soft/95 backdrop-blur-sm">
             <div className="text-center">

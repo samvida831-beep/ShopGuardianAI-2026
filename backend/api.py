@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import os
 import threading
@@ -719,6 +720,44 @@ async def stream_camera(camera: int, user: AdminUser = Depends(get_current_user_
     return StreamingResponse(
         mjpeg_generator(camera),
         media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
+@app.get("/api/stream-sse")
+async def stream_sse(camera: int, user: AdminUser = Depends(get_current_user_flexible)):
+    """SSE-based streaming endpoint for compatibility with Cloudflare proxy.
+    Emits base64-encoded JPEG frames as text/event-stream events."""
+    if camera not in (1, 2):
+        raise HTTPException(status_code=400, detail="Invalid camera number")
+
+    async def sse_generator():
+        last_id = -1
+        while True:
+            jpeg_bytes, frame_id = latest_frames.get_jpeg(camera)
+            if jpeg_bytes is not None and frame_id != last_id:
+                last_id = frame_id
+                b64 = base64.b64encode(jpeg_bytes).decode("ascii")
+                yield f"data: {b64}\n\n"
+            elif jpeg_bytes is None:
+                filename = f"camera{camera}.jpg"
+                disk_path = os.path.join(FRAME_DIR, filename)
+                if os.path.exists(disk_path):
+                    try:
+                        with open(disk_path, "rb") as f:
+                            disk_bytes = f.read()
+                        b64 = base64.b64encode(disk_bytes).decode("ascii")
+                        yield f"data: {b64}\n\n"
+                    except Exception:
+                        pass
+            await asyncio.sleep(0.033)
+
+    return StreamingResponse(
+        sse_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-buffer, no-store, must-revalidate",
+            "Connection": "keep-alive",
+        },
     )
 
 

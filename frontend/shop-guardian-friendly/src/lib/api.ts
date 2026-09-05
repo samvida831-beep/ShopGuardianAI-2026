@@ -26,6 +26,16 @@ function withMediaToken(path: string): string {
   return `${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(active)}`;
 }
 
+export function buildMediaSrc(path: string, bust: number = Date.now()): string {
+  // Always returns a well-formed URL with a leading "?" so callers can
+  // safely append further params (e.g. &t=...) without breaking the query
+  // string. Avoids "&t=..." being attached to a tokenless path (which the
+  // server would 401 on).
+  const [base, query = ""] = path.split("?");
+  const sep = query ? "&" : "?";
+  return `${base}${query ? "?" + query : ""}${sep}t=${bust}`;
+}
+
 export function getSnapshotImageUrl(file: string): string {
   return withMediaToken(`${BASE_URL}/api/snapshot-image?file=${encodeURIComponent(file)}`);
 }
@@ -264,6 +274,18 @@ export function getCameraFrameUrl(camera: 1 | 2): string {
 
 export function getStreamUrl(camera: 1 | 2): string {
   return withMediaToken(`${BASE_URL}/api/stream?camera=${camera}`);
+}
+
+export function buildCameraFrameSrc(camera: 1 | 2): string {
+  return buildMediaSrc(getCameraFrameUrl(camera));
+}
+
+export function getCameraStreamSrc(camera: 1 | 2): string {
+  return buildMediaSrc(getStreamUrl(camera));
+}
+
+export function getCameraStreamEventSrc(camera: 1 | 2): string {
+  return buildMediaSrc(withMediaToken(`${BASE_URL}/api/stream-sse?camera=${camera}`));
 }
 
 export async function getSnapshots(): Promise<string[]> {
