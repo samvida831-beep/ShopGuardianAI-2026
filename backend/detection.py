@@ -134,6 +134,17 @@ def draw_status(frame, customer_count, shop_occupied, zone_loaded):
 
 
 def main():
+    try:
+        _run_detection()
+    except BaseException:
+        import traceback
+        print("===== DETECTION THREAD CRASH =====", flush=True)
+        traceback.print_exc()
+        print("===== END DETECTION THREAD CRASH =====", flush=True)
+        raise
+
+
+def _run_detection():
     os.makedirs(SNAPSHOT_DIR, exist_ok=True)
     os.makedirs(LOG_DIR, exist_ok=True)
     FRAME_DIR = os.path.join(BASE_DIR, "Frames")
