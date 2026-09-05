@@ -6,6 +6,7 @@ import {
   getStatus,
   getActivity,
   getCameraFrameUrl,
+  buildCameraFrameSrc,
   getAlerts,
   getSnapshots,
   type ShopStatus,
@@ -90,6 +91,14 @@ function Dashboard() {
         } else {
           setState("empty");
         }
+
+        try {
+          const [alerts, snaps] = await Promise.all([getAlerts(), getSnapshots()]);
+          setAlertsCount(alerts.length);
+          setSnapCount(snaps.length);
+        } catch (countsErr) {
+          console.error(countsErr);
+        }
       } catch (error) {
         console.error(error);
         setState("offline");
@@ -114,20 +123,6 @@ function Dashboard() {
     }
 
     loadCameraMetadata();
-  }, []);
-
-  useEffect(() => {
-    async function loadCounts() {
-      try {
-        const [alerts, snaps] = await Promise.all([getAlerts(), getSnapshots()]);
-        setAlertsCount(alerts.length);
-        setSnapCount(snaps.length);
-      } catch (error) {
-        console.error(error);
-      }
-    }
-
-    loadCounts();
   }, []);
 
   useEffect(() => {
@@ -610,35 +605,51 @@ function handleMouseUp() {
         <ActionButton tone="brand" icon={<FolderOpen className="h-5 w-5" />} label="Open Gallery" onClick={() => (window.location.href = "/gallery")} />
       </section>
       {selectedCamera && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
-          onClick={() => setSelectedCamera(null)}
-        >
-          <div
-            className="relative w-[90vw] max-w-6xl rounded-3xl bg-card p-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              className="absolute right-4 top-4 rounded-lg bg-red-500 px-3 py-1 text-white"
-              onClick={() => setSelectedCamera(null)}
-            >
-              ✕ Close
-            </button>
-
-            <h2 className="mb-4 text-xl font-bold">
-              {selectedCamera === 1 ? "Entrance Camera" : "Inside Shop Camera"}
-            </h2>
-
-            <img
-              src={`${getCameraFrameUrl(selectedCamera)}&t=${Date.now()}`}
-              alt="Live Camera"
-              className="w-full rounded-2xl object-contain"
-            />
-          </div>
-        </div>
+        <ModalCamera camera={selectedCamera as 1 | 2} onClose={() => setSelectedCamera(null)} />
       )}
-    
+
     </ShopLayout>
+  );
+}
+
+function ModalCamera({ camera, onClose }: { camera: 1 | 2; onClose: () => void }) {
+  const [imgSrc, setImgSrc] = useState(buildCameraFrameSrc(camera));
+
+  useEffect(() => {
+    setImgSrc(buildCameraFrameSrc(camera));
+    const id = window.setInterval(() => {
+      setImgSrc(buildCameraFrameSrc(camera));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [camera]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-[90vw] max-w-6xl rounded-3xl bg-card p-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          className="absolute right-4 top-4 rounded-lg bg-red-500 px-3 py-1 text-white"
+          onClick={onClose}
+        >
+          ✕ Close
+        </button>
+
+        <h2 className="mb-4 text-xl font-bold">
+          {camera === 1 ? "Entrance Camera" : "Inside Shop Camera"}
+        </h2>
+
+        <img
+          src={imgSrc}
+          alt="Live Camera"
+          className="w-full rounded-2xl object-contain"
+        />
+      </div>
+    </div>
   );
 }
 
@@ -668,6 +679,20 @@ function MiniStat({ label, value, caption }: { label: string; value: string; cap
 }
 
 function CameraCard({ title, subtitle, src, offline, dim, onRetry }: { title: string; subtitle: string; src: string; offline?: boolean; dim?: boolean; onRetry?: () => void }) {
+  const cameraNumber: 1 | 2 = src.includes("camera=1") ? 1 : 2;
+  const [imgSrc, setImgSrc] = useState(src);
+
+  useEffect(() => {
+    setImgSrc(src);
+  }, [src]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setImgSrc(buildCameraFrameSrc(cameraNumber));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [cameraNumber]);
+
   return (
     <div className="overflow-hidden rounded-3xl bg-card shadow-[var(--shadow-card)]">
       <div className="flex items-center justify-between p-4">
@@ -686,7 +711,7 @@ function CameraCard({ title, subtitle, src, offline, dim, onRetry }: { title: st
         )}
       </div>
       <div className="relative mx-4 mb-4 overflow-hidden rounded-2xl border border-border">
-        <img src={src} alt={title} className={`h-64 w-full object-contain transition ${dim ? "opacity-40 grayscale" : ""}`} loading="lazy" />
+        <img src={imgSrc} alt={title} className={`h-64 w-full object-contain transition ${dim ? "opacity-40 grayscale" : ""}`} loading="lazy" />
         {offline && (
           <div className="absolute inset-0 grid place-items-center bg-danger-soft/95 backdrop-blur-sm">
             <div className="text-center">
