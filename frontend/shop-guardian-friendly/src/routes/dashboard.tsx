@@ -619,7 +619,7 @@ function ModalCamera({ camera, onClose }: { camera: 1 | 2; onClose: () => void }
     setImgSrc(buildCameraFrameSrc(camera));
     const id = window.setInterval(() => {
       setImgSrc(buildCameraFrameSrc(camera));
-    }, 1000);
+    }, 150);
     return () => window.clearInterval(id);
   }, [camera]);
 
@@ -689,7 +689,7 @@ function CameraCard({ title, subtitle, src, offline, dim, onRetry }: { title: st
   useEffect(() => {
     const id = window.setInterval(() => {
       setImgSrc(buildCameraFrameSrc(cameraNumber));
-    }, 1000);
+    }, 150);
     return () => window.clearInterval(id);
   }, [cameraNumber]);
 
