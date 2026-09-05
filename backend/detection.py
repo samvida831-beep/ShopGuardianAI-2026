@@ -270,6 +270,8 @@ def _run_detection():
     last_cam1_id = -1
     last_cam2_id = -1
     last_frame_save_time = 0.0
+    _diag_set1_done = False
+    _diag_set2_done = False
 
     cam_turn = 1
     cam1_person_detected, cam1_in_zone, cam1_boxes = False, False, []
@@ -375,10 +377,16 @@ def _run_detection():
             ret1, buf1 = cv2.imencode('.jpg', camera1_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             if ret1:
                 latest_frames.set_frame(1, buf1.tobytes())
+                if not _diag_set1_done:
+                    print(f"[DET_DIAG] set_frame cam=1 frame_id={cam1_id}", flush=True)
+                    _diag_set1_done = True
 
             ret2, buf2 = cv2.imencode('.jpg', camera2_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             if ret2:
                 latest_frames.set_frame(2, buf2.tobytes())
+                if not _diag_set2_done:
+                    print(f"[DET_DIAG] set_frame cam=2 frame_id={cam2_id}", flush=True)
+                    _diag_set2_done = True
 
             # Rate-limit frame saves to disk (max 10 fps) to maintain fallback /api/frame compatibility
             if now - last_frame_save_time >= 0.1:
