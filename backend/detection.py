@@ -151,6 +151,25 @@ def _run_detection():
     os.makedirs(FRAME_DIR, exist_ok=True)
 
     model = YOLO(os.path.join(BASE_DIR, "yolov8n.pt"))
+
+    for _demo_name in (DEMO_CAMERA1, DEMO_CAMERA2):
+        _demo_path = os.path.join(BASE_DIR, _demo_name)
+        _exists = os.path.isfile(_demo_path)
+        _size = os.path.getsize(_demo_path) if _exists else -1
+        _cap = cv2.VideoCapture(_demo_path)
+        _opened = _cap.isOpened()
+        _ret = False
+        _shape = None
+        if _opened:
+            _ret, _frame = _cap.read()
+            _shape = None if _frame is None else _frame.shape
+        _cap.release()
+        print(
+            f"[DEMO_DIAG] {_demo_name} exists={_exists} size={_size} "
+            f"isOpened={_opened} read_ok={_ret} frame_shape={_shape}",
+            flush=True,
+        )
+
     if CAMERA_MODE == "live":
         camera1 = CameraStream(ENTRY_RTSP_URL)
         camera2 = CameraStream(INSIDE_RTSP_URL)
