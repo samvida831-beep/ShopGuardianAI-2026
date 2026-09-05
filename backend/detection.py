@@ -270,8 +270,6 @@ def _run_detection():
     last_cam1_id = -1
     last_cam2_id = -1
     last_frame_save_time = 0.0
-    _diag_set1_done = False
-    _diag_set2_done = False
 
     cam_turn = 1
     cam1_person_detected, cam1_in_zone, cam1_boxes = False, False, []
@@ -298,66 +296,79 @@ def _run_detection():
 
             now = time.monotonic()
 
-            if cam_turn == 1:
-                cam1_person_detected, cam1_in_zone, cam1_boxes = detect_people(
-                    model, camera1_frame, box_intersects_camera1_zone
-                )
-                draw_detected_boxes(camera2_frame, cam2_boxes)
-                cam_turn = 2
-            else:
-                cam2_person_detected, cam2_in_zone, cam2_boxes = detect_people(
-                    model,
-                    camera2_frame,
-                    box_intersects_camera2_zone,
-                    early_margin=CAMERA2_EARLY_MARGIN,
-                )
-                draw_detected_boxes(camera1_frame, cam1_boxes)
-                cam_turn = 1
+            # Publish raw frames to /api/frame BEFORE YOLO so a YOLO/OOM
+            # failure cannot starve the live stream endpoint.
+            ret1, buf1 = cv2.imencode('.jpg', camera1_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            if ret1:
+                latest_frames.set_frame(1, buf1.tobytes())
 
-            camera1_person_detected = cam1_person_detected
-            person_in_camera1_zone = cam1_in_zone
-            camera2_person_detected = cam2_person_detected
-            person_in_camera2_zone = cam2_in_zone
+            ret2, buf2 = cv2.imencode('.jpg', camera2_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            if ret2:
+                latest_frames.set_frame(2, buf2.tobytes())
 
-            any_person_detected = camera1_person_detected or camera2_person_detected
-            person_in_any_zone = person_in_camera1_zone or person_in_camera2_zone
-            triggering_frame = camera1_frame if person_in_camera1_zone else camera2_frame
-            handle_entry(person_in_any_zone, triggering_frame, now)
+            try:
+                if cam_turn == 1:
+                    cam1_person_detected, cam1_in_zone, cam1_boxes = detect_people(
+                        model, camera1_frame, box_intersects_camera1_zone
+                    )
+                    draw_detected_boxes(camera2_frame, cam2_boxes)
+                    cam_turn = 2
+                else:
+                    cam2_person_detected, cam2_in_zone, cam2_boxes = detect_people(
+                        model,
+                        camera2_frame,
+                        box_intersects_camera2_zone,
+                        early_margin=CAMERA2_EARLY_MARGIN,
+                    )
+                    draw_detected_boxes(camera1_frame, cam1_boxes)
+                    cam_turn = 1
 
-            if person_in_any_zone:
-                last_any_person_time = now
-                no_person_start = None
+                camera1_person_detected = cam1_person_detected
+                person_in_camera1_zone = cam1_in_zone
+                camera2_person_detected = cam2_person_detected
+                person_in_camera2_zone = cam2_in_zone
 
-            elif shop_occupied:
+                any_person_detected = camera1_person_detected or camera2_person_detected
+                person_in_any_zone = person_in_camera1_zone or person_in_camera2_zone
+                triggering_frame = camera1_frame if person_in_camera1_zone else camera2_frame
+                handle_entry(person_in_any_zone, triggering_frame, now)
 
-                if no_person_start is None:
-                    no_person_start = now
+                if person_in_any_zone:
+                    last_any_person_time = now
+                    no_person_start = None
 
-                elif now - no_person_start >= EMPTY_CONFIRM_TIME:
+                elif shop_occupied:
 
-                    if last_any_person_time is not None and \
-                        now - last_any_person_time >= EMPTY_RESET_TIME:
+                    if no_person_start is None:
+                        no_person_start = now
 
-                        shop_occupied = False
-                        shop_state["occupied"] = False
-                        shop_state["shop_status"] = "Empty"
-                        save_shared_state()
+                    elif now - no_person_start >= EMPTY_CONFIRM_TIME:
 
-                        shop_state["recent_activity"].insert(
-                            0,
-                            f"Shop became empty at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                        )
+                        if last_any_person_time is not None and \
+                            now - last_any_person_time >= EMPTY_RESET_TIME:
 
-                        # Keep only the latest 10 events
-                        shop_state["recent_activity"] = shop_state["recent_activity"][:10]
+                            shop_occupied = False
+                            shop_state["occupied"] = False
+                            shop_state["shop_status"] = "Empty"
+                            save_shared_state()
 
-                        no_person_start = None
-                        print("Shop empty. Resetting occupancy.")
-                        
-            draw_status(camera1_frame, customer_count, shop_occupied, camera1_zone_is_loaded())
-            draw_status(camera2_frame, customer_count, shop_occupied, camera2_zone_is_loaded())
-            draw_camera1_zone(camera1_frame)
-            draw_camera2_zone(camera2_frame)
+                            shop_state["recent_activity"].insert(
+                                0,
+                                f"Shop became empty at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                            )
+
+                            # Keep only the latest 10 events
+                            shop_state["recent_activity"] = shop_state["recent_activity"][:10]
+
+                            no_person_start = None
+                            print("Shop empty. Resetting occupancy.")
+
+                draw_status(camera1_frame, customer_count, shop_occupied, camera1_zone_is_loaded())
+                draw_status(camera2_frame, customer_count, shop_occupied, camera2_zone_is_loaded())
+                draw_camera1_zone(camera1_frame)
+                draw_camera2_zone(camera2_frame)
+            except Exception as _yolo_err:
+                print(f"[DET] YOLO/detection pass failed (continuing): {_yolo_err}", flush=True)
 
             if not headless:
                 try:
@@ -372,21 +383,6 @@ def _run_detection():
                         break
                 except Exception:
                     pass
-
-            # In-memory JPEG encoding for real-time decoupled streaming
-            ret1, buf1 = cv2.imencode('.jpg', camera1_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            if ret1:
-                latest_frames.set_frame(1, buf1.tobytes())
-                if not _diag_set1_done:
-                    print(f"[DET_DIAG] set_frame cam=1 frame_id={cam1_id}", flush=True)
-                    _diag_set1_done = True
-
-            ret2, buf2 = cv2.imencode('.jpg', camera2_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            if ret2:
-                latest_frames.set_frame(2, buf2.tobytes())
-                if not _diag_set2_done:
-                    print(f"[DET_DIAG] set_frame cam=2 frame_id={cam2_id}", flush=True)
-                    _diag_set2_done = True
 
             # Rate-limit frame saves to disk (max 10 fps) to maintain fallback /api/frame compatibility
             if now - last_frame_save_time >= 0.1:
